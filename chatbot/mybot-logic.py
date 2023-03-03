@@ -5,7 +5,6 @@ import re
 import time
 import tkinter as tk
 from tkinter import filedialog
-
 import aiml
 import gensim
 import numpy as np
@@ -168,8 +167,10 @@ index = gensim.similarities.MatrixSimilarity(tfidf[questions_bow])
 #######################################################
 # Welcome user
 #######################################################
-print("Welcome to this chat bot. Please feel free to ask questions from me!")
-print("If you would like to use voice commands, please enter VOICE")
+print("Hello there! My name is Nutrino")
+print("I'm here to assist you with any questions or concerns you have regarding health, wellness, and nutrition. Go ahead and ask me anything!")
+print("If you would me to speak out my replies, please enter SPEAK to start and STOP to stop")
+print("If you would like to ask a question using voice, please enter VOICE.")
 
 use_voice = False
 r = sr.Recognizer()
@@ -177,10 +178,13 @@ r = sr.Recognizer()
 #######################################################
 # Main loop
 #######################################################
-
-
-# create text-to-speech engine
 engine = pyttsx3.init()
+# voice properties
+voices = engine.getProperty('voices')
+engine.setProperty('voice', voices[1].id) # select a male voice
+engine.setProperty('rate', 160) # adjust speaking rate
+engine.setProperty('volume', 0.9) # adjust volume
+engine.setProperty('pitch', 1.1) # adjust pitch
 
 while True:
     # get user input
@@ -205,14 +209,14 @@ while True:
                 engine.runAndWait()
             continue
 
-        if user_input.lower() == "speakout":
+        if user_input.lower() == "speak":
             print("Speech output activated")
             engine.say("Speech output activated")
             engine.runAndWait()
             speakout = True
             continue
 
-        if user_input.lower() == "stopspeak":
+        if user_input.lower() == "stop":
             print("Speech output deactivated")
             engine.say("Speech output deactivated")
             engine.runAndWait()
@@ -222,28 +226,6 @@ while True:
     except (KeyboardInterrupt, EOFError):
         print("Bye!")
         break
-
-    # while True:
-    #     # get user input
-    #     try:
-    #         if not use_voice:
-    #             user_input = input("> ")
-    #         else:
-    #             inputv = listen()
-    #             if inputv is not None:  # Add this check
-    #                 print(f"You said: {inputv}")
-    #                 user_input = inputv
-    #                 use_voice = False
-    #             else:
-    #                 continue
-    #
-    #         if user_input.lower() == "voice":
-    #             use_voice = True
-    #             print("Voice Input Activated")
-    #             continue
-    #     except (KeyboardInterrupt, EOFError):
-    #         print("Bye!")
-    #         break
 
     # pre-process user input and determine response agent (if needed)
     responseAgent = 'aiml'

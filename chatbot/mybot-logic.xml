@@ -1,6 +1,8 @@
 <aiml version="1.0.1" encoding="UTF-8">
 
 <!-- Greetings and Politeness -->
+<category> <pattern> WHO ARE YOU </pattern>
+  <template>I'm Nutrino, a chatbot designed by Adeeb for his Artificial Intelligence project. I'm here to assist you with any questions you may have related to Health, Wellness and Nutrition. Don't hesitate to ask me anything, I'll do my best to provide you with accurate and helpful information!</template> </category>
 <category> <pattern> HELLO </pattern>
   <template>Hello! How are you?</template> </category>
 
