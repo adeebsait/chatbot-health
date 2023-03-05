@@ -56,18 +56,26 @@
 <category><pattern> WHAT DO YOU KNOW * </pattern>
   <template>#33$<star index="1"/></template></category>
 
-<category><pattern> WHAT IS IN THIS FOOD IMAGE </pattern>
-  <template>#34$<star index="1"/></template></category>
+<!--<category><pattern> WHAT IS IN THIS FOOD IMAGE </pattern>-->
+<!--  <template>#34$<star index="1"/></template></category>-->
 
-<category><pattern> WHAT IS IN THIS FOOD IMAGE * </pattern>
-  <template>#34$<star index="1"/></template></category>
+<!--<category><pattern> WHAT IS IN THIS FOOD IMAGE * </pattern>-->
+<!--  <template>#34$<star index="1"/></template></category>-->
+
+<category><pattern> WHAT ARE IN THIS FOOD IMAGE </pattern>
+  <template>#35$<star index="1"/></template></category>
+
+<category><pattern> WHAT ARE IN THIS FOOD IMAGE * </pattern>
+  <template>#35$<star index="1"/></template></category>
 
 <category><pattern> WHAT IS IN THIS DRUG IMAGE </pattern>
-  <template>#35$<star index="1"/></template></category>
+  <template>#36$<star index="1"/></template></category>
 
 <category><pattern> WHAT IS IN THIS DRUG IMAGE * </pattern>
-  <template>#35$<star index="1"/></template></category>
-   
+  <template>#36$<star index="1"/></template></category>
+
+<category><pattern> CAN YOU SUGGEST EXERCISES FOR * </pattern>
+  <template>#37$<star index="1"/></template></category>
 
 <!-- Default reaction -->
 <category><pattern> * </pattern>

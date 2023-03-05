@@ -20,16 +20,14 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing import image
 import speech_recognition as sr
 import pyttsx3
+from typing import List
+import random
 
 # nltk.download('punkt')
 # nltk.download('stopwords')
 # nltk.download('wordnet')
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
-
-# Nutritionix API credentials
-app_id = "456feebd"
-app_key = "06ea5ed212cf32eeea201c7a617db6a2"
 
 FOOD_CATEGORY = {
     0: ['burger', 'Burger'], 1: ['butter_naan', 'Butter Naan'], 2: ['chai', 'Chai'],
@@ -71,12 +69,8 @@ def listen():
         print("Listening...")
         r.adjust_for_ambient_noise(source)
         audio = r.listen(source)
-        print("done")
     try:
-        print("Yes")
         inputv = r.recognize_google(audio, show_all=False)
-        print("check1")
-        # print("You said: " + inputv)
         return inputv
     except sr.UnknownValueError:
         pass
@@ -94,6 +88,13 @@ def get_answer(question):
     return answers_corpus[max_index]
 
 
+def get_exercises_for_body_part(body_part):
+    exercise_data = pandas.read_csv('megaGymDataset.csv')
+    exercises = exercise_data[exercise_data['BodyPart'].str.lower() == body_part.lower()]['Title'].tolist()
+    random_exercises = random.sample(exercises, k=min(5, len(exercises)))
+    return random_exercises
+
+
 def predict_image_food(filename, model) -> str:
     img_ = image.load_img(filename, target_size=(299, 299))
     img_array = image.img_to_array(img_)
@@ -106,6 +107,42 @@ def predict_image_food(filename, model) -> str:
     return FOOD_CATEGORY[index][1]
 
 
+# def predict_image_food_multi(filename, model) -> list:
+#     img_ = image.load_img(filename, target_size=(299, 299))
+#     img_array = image.img_to_array(img_)
+#     img_processed = np.expand_dims(img_array, axis=0)
+#     img_processed /= 255.
+#
+#     prediction = model.predict(img_processed)
+#
+#     indices = np.argsort(prediction[0])[::-1]
+#     top_indices = indices[:5]
+#
+#     detected_food = []
+#     for index in top_indices:
+#         if prediction[0][index] > 0.5:
+#             detected_food.append(FOOD_CATEGORY[index][1])
+#
+#     return detected_food
+
+def predict_image_food_multi(filename, model) -> List[str]:
+    img = image.load_img(filename, target_size=(299, 299))
+    img_array = image.img_to_array(img)
+    img_array /= 255.
+    img_expanded = np.expand_dims(img_array, axis=0)
+
+    predictions = model.predict(img_expanded)[0]
+
+    # Get the indices of the classes with confidence above the threshold
+    threshold = 0.5
+    class_ids = np.where(predictions > threshold)[0]
+
+    # Get the names of the classes
+    names = [FOOD_CATEGORY[class_id][1] for class_id in list(class_ids)]
+
+    return names
+
+
 def predict_image_drug(filename, model) -> str:
     img = image.load_img(filename, target_size=(300, 300))
     img = image.img_to_array(img, dtype=np.uint8)
@@ -113,17 +150,6 @@ def predict_image_drug(filename, model) -> str:
     p = model.predict(img[np.newaxis, ...])
 
     return DRUG_CATEGORY[np.argmax(p[0], axis=-1)]
-
-
-# Function to retrieve information about a food item
-def get_nutrition_info(food):
-    url = f"https://api.nutritionix.com/v1_1/search/{food}?results=0:1&fields=item_name,brand_name,nf_calories,nf_total_fat"
-    headers = {
-        "x-app-id": app_id,
-        "x-app-key": app_key
-    }
-    response = requests.get(url, headers=headers)
-    return response.json()
 
 
 #######################################################
@@ -135,6 +161,7 @@ root = tk.Tk()
 root.withdraw()
 model_food = load_model("model_food.h5")
 model_drugs = load_model("model_drugs.h5")
+# exercise_data = pandas.read_csv('megaGymDataset.csv')
 
 #######################################################
 #  Initialise Knowledgebase.
@@ -172,7 +199,7 @@ index = gensim.similarities.MatrixSimilarity(tfidf[questions_bow])
 #######################################################
 print("Hello there! My name is Nutrino")
 print("I'm here to assist you with any questions or concerns you have regarding health, wellness, and nutrition. Go ahead and ask me anything!")
-print("If you would me to speak out my replies, please enter SPEAK to start and STOP to stop")
+print("If you would like me to speak out my replies, please enter SPEAK to start and STOP to stop")
 print("If you would like to ask a question using voice, please enter VOICE.")
 
 use_voice = False
@@ -189,6 +216,7 @@ engine.setProperty('rate', 160) # adjust speaking rate
 engine.setProperty('volume', 0.9) # adjust volume
 engine.setProperty('pitch', 1.1) # adjust pitch
 
+speakout = False
 while True:
     # get user input
     try:
@@ -196,7 +224,7 @@ while True:
             user_input = input("> ")
         else:
             inputv = listen()
-            if inputv is not None:  # Add this check
+            if inputv is not None:
                 print(f"You said: {inputv}")
                 user_input = inputv
                 use_voice = False
@@ -316,28 +344,49 @@ while True:
                 engine.say(f"This could be a {pred}")
                 engine.runAndWait()
 
-            nutrition_info = get_nutrition_info(pred)
-            if 'hits' in nutrition_info:
-                calories = nutrition_info['hits'][0]['fields']['nf_calories']
-                protein = nutrition_info['hits'][0]['fields']['nf_protein']
-                carbs = nutrition_info['hits'][0]['fields']['nf_total_carbohydrate']
-                fat = nutrition_info['hits'][0]['fields']['nf_total_fat']
-                if speakout:
-                    engine.say("Speech output deactivated")
-                    engine.runAndWait()
-                print(f"Calories in 100g of {pred}: {calories}")
-                print(f"Protein in 100g of {pred}: {protein}")
-                print(f"Carbs in 100g of {pred}: {carbs}")
-                print(f"Fat in 100g of {pred}: {fat}")
-            else:
-                print(f"No information found for {pred}")
-
         elif cmd == 35:
+            file_path = filedialog.askopenfilename()
+            pred = []
+            pred = predict_image_food_multi(file_path, model_food)
+            print(pred)
+            if len(pred) == 1:
+                reply = f"This could be a {pred[0]}"
+                print(reply)
+                if speakout:
+                    engine.say(f"This could be a {pred[0]}")
+                    engine.runAndWait()
+            elif len(pred) > 1:
+                reply = "These could be "
+                print(reply)
+                engine.say(reply)
+                engine.runAndWait()
+                for food in pred:
+                    print(food)
+                    if speakout:
+                        engine.say(food)
+                        engine.runAndWait()
+
+        elif cmd == 36:
             file_path = filedialog.askopenfilename()
             pred = predict_image_drug(file_path, model_drugs)
             print(f"This could be a {pred}")
             if speakout:
                 engine.say(f"This could be a {pred}")
+                engine.runAndWait()
+
+        elif cmd == 37:
+            pred = []
+            body_part = params[1]
+            if body_part.lower() == 'abs':
+                body_part = 'Abdominals'
+            pred = get_exercises_for_body_part(body_part)
+            if len(pred) == 0:
+                reply = f"Sorry, I couldn't find any exercises for {body_part}. Please try again."
+            else:
+                reply = f"Here are 5 exercises for {body_part}: {', '.join(pred)}"
+            print(reply)
+            if speakout:
+                engine.say(reply)
                 engine.runAndWait()
 
         elif cmd == 99:
