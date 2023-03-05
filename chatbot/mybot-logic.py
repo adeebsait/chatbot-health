@@ -11,6 +11,7 @@ import numpy as np
 import pandas
 import requests
 # from gensim.parsing.preprocessing import preprocess_documents
+import os
 from nltk.inference import ResolutionProver
 from nltk.sem import Expression
 from nltk.stem import WordNetLemmatizer
@@ -23,6 +24,8 @@ import pyttsx3
 # nltk.download('punkt')
 # nltk.download('stopwords')
 # nltk.download('wordnet')
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 # Nutritionix API credentials
 app_id = "456feebd"
