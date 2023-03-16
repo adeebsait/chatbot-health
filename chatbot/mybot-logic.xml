@@ -77,6 +77,9 @@
 <category><pattern> HOW MANY * IN * OF *</pattern>
   <template>#38$<star index="1"/> in <star index="2"/> of <star index="3"></star> </template></category>
 
+<category><pattern> CAN YOU EVALUATE *</pattern>
+  <template>#39$<star index="1"/> </template></category>
+
 <!-- Default reaction -->
 <category><pattern> * </pattern>
   <template>#99$<star index="1"/></template></category>

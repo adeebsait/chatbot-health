@@ -2,6 +2,7 @@
 #  Initialise NLTK Inference
 #######################################################
 # from gensim.parsing.preprocessing import preprocess_documents
+import csv
 import json
 import os
 import random
@@ -60,11 +61,12 @@ FOODS_CATEGORY = {
     88: 'Hu_tieu', 89: 'Xoi'
 }
 
-
 DRUG_CATEGORY = {
     0: 'Alaxan', 1: 'Bactidol', 2: 'Bioflu', 3: 'Biogesic', 4: 'DayZinc', 5: 'Decolgen',
     6: 'Fish Oil', 7: 'Kremil S', 8: 'Medicol', 9: 'Neozep'
 }
+
+use_voice = False
 
 
 def is_kb_consistent() -> bool:
@@ -72,20 +74,35 @@ def is_kb_consistent() -> bool:
     return not inconsistent
 
 
-def print_kb(kb):
+def print_kb():
     categories = {}
-    for line in kb:
-        parts = line.split(" is ")
+
+    for imp_expr in kb:
+        line = str(imp_expr)
+        parts = line.split(" -> ")
         category = parts[0].strip()
-        content = parts[1].strip()
+
+        if "(" in category:
+            category = category.split("(")[0]
 
         if category not in categories:
             categories[category] = []
+
+        if len(parts) > 1:
+            content = parts[1].strip()
+        else:
+            content = ""
 
         if content.startswith("-"):
             content = "not " + content[1:]
         content = content.replace(" & ", " and ")
         content = content.replace(" -> ", ": ")
+
+        if "(" in line:
+            content = line.replace("(", " is ").replace(")", "")
+
+        # Replace '-' symbol with 'not '
+        content = content.replace("-", "not ")
 
         categories[category].append(content)
 
@@ -107,7 +124,61 @@ def preprocess_documents(documents):
     return preprocessed
 
 
-use_voice = False
+def read_csv_file(file_name):
+    with open(file_name, newline='') as csvfile:
+        reader = csv.DictReader(csvfile)
+        restaurant_data = {row["name"]: (int(row["service"]), int(row["food"])) for row in reader}
+    return restaurant_data
+
+
+def triangular_membership(x, a, b, c):
+    epsilon = 1e-6  # small constant to avoid division by zero
+    return np.fmax(np.fmin((x - a) / (b - a + epsilon), (c - x) / (c - b + epsilon)), 0)
+
+
+def evaluate_restaurant(service, food):
+    # Service quality fuzzy sets (low, medium, high)
+    service_low = triangular_membership(service, 0, 0, 5)
+    service_medium = triangular_membership(service, 0, 5, 10)
+    service_high = triangular_membership(service, 5, 10, 10)
+
+    # Food quality fuzzy sets (low, medium, high)
+    food_low = triangular_membership(food, 0, 0, 5)
+    food_medium = triangular_membership(food, 0, 5, 10)
+    food_high = triangular_membership(food, 5, 10, 10)
+
+    # Fuzzy rules
+    rule1 = np.fmin(service_low, food_low)
+    rule2 = np.fmin(service_medium, food_low)
+    rule3 = np.fmin(service_high, food_low)
+    rule4 = np.fmin(service_low, food_medium)
+    rule5 = np.fmin(service_medium, food_medium)
+    rule6 = np.fmin(service_high, food_medium)
+    rule7 = np.fmin(service_low, food_high)
+    rule8 = np.fmin(service_medium, food_high)
+    rule9 = np.fmin(service_high, food_high)
+
+    # Output fuzzy sets (low, medium, high)
+    quality_low = np.fmax(rule1, rule4)
+    quality_medium = np.fmax(np.fmax(rule2, rule5), rule7)
+    quality_high = np.fmax(np.fmax(rule3, rule6), rule9)
+
+    return quality_low, quality_medium, quality_high
+
+
+def defuzzify(low_quality, medium_quality, high_quality):
+    # Define output crisp values for low, medium, and high quality
+    crisp_low = 0
+    crisp_medium = 0.5
+    crisp_high = 1
+
+    # Calculate the centroid (weighted average)
+    total_weight = low_quality + medium_quality + high_quality
+    crisp_output = (
+                           low_quality * crisp_low + medium_quality * crisp_medium + high_quality * crisp_high
+                   ) / total_weight
+
+    return crisp_output
 
 
 def listen():
@@ -159,7 +230,8 @@ def detect_foods(file_path, food_model, class_names, conf_threshold=0.3):  # Add
     image = Image.open(file_path)
 
     # Prepare image for the model
-    transform = T.Compose([T.Resize((640, 640)), T.ToTensor(), T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+    transform = T.Compose(
+        [T.Resize((640, 640)), T.ToTensor(), T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
     image = transform(image).unsqueeze(0)
 
     # Get predictions from the model
@@ -253,7 +325,7 @@ root.withdraw()
 model_food = load_model("model_food.h5")
 model_drugs = load_model("model_drugs.h5")
 food_model = YOLOv5("yolov5l.pt", device="cpu")
-# exercise_data = pandas.read_csv('megaGymDataset.csv')
+restaurant_data = read_csv_file("restaurants.csv")
 
 #######################################################
 #  Initialise Knowledgebase.
@@ -290,7 +362,8 @@ index = gensim.similarities.MatrixSimilarity(tfidf[questions_bow])
 # Welcome user
 #######################################################
 print("Hello there! My name is Nutrino")
-print("I'm here to assist you with any questions or concerns you have regarding health, wellness, and nutrition. Go ahead and ask me anything!")
+print(
+    "I'm here to assist you with any questions or concerns you have regarding health, wellness, and nutrition. Go ahead and ask me anything!")
 print("If you would like me to speak out my replies, please enter SPEAK to start and STOP to stop")
 print("If you would like to ask a question using voice, please enter VOICE.")
 
@@ -487,6 +560,20 @@ while True:
             print(reply)
             if speakout:
                 engine.say(reply)
+                engine.runAndWait()
+
+        elif cmd == 39:
+            restaurant_name = params[1]
+            if restaurant_name in restaurant_data:
+                service, food = restaurant_data[restaurant_name]
+                low_quality, medium_quality, high_quality = evaluate_restaurant(service, food)
+                crisp_quality = defuzzify(low_quality, medium_quality, high_quality)
+                response = f"The crisp quality of {restaurant_name} is {crisp_quality:.2f}"
+            else:
+                response = f"Sorry, {restaurant_name} was not found in the dataset."
+            print(response)
+            if speakout:
+                engine.say(response)
                 engine.runAndWait()
 
         elif cmd == 99:
