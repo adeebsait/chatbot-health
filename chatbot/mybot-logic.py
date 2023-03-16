@@ -16,13 +16,15 @@ import pandas
 import pyttsx3
 import requests
 import speech_recognition as sr
+from PIL import Image
 from keras.models import load_model
 from keras.preprocessing import image
 from nltk.inference import ResolutionProver
 from nltk.sem import Expression
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
-from py_edamam import Edamam
+import torchvision.transforms as T
+from yolov5 import YOLOv5
 
 # nltk.download('punkt')
 # nltk.download('stopwords')
@@ -39,12 +41,30 @@ FOOD_CATEGORY = {
     16: ['pakode', 'Pakode'], 17: ['pav_bhaji', 'Pav Bhaji'], 18: ['pizza', 'Pizza'], 19: ['samosa', 'Samosa']
 }
 
+FOODS_CATEGORY = {
+    0: 'hot-dog', 1: 'Apple', 2: 'Artichoke', 3: 'Asparagus', 4: 'Bagel', 5: 'Baked-goods',
+    6: 'Banana', 7: 'Beer', 8: 'Bell-pepper', 9: 'Bread', 10: 'Broccoli', 11: 'Burrito',
+    12: 'Cabbage', 13: 'Cake', 14: 'Candy', 15: 'Cantaloupe', 16: 'Carrot', 17: 'Common-fig',
+    18: 'Cookie', 19: 'Dessert', 20: 'French-fries', 21: 'Grape', 22: 'Guacamole', 23: 'Hot-dog',
+    24: 'Ice-cream', 25: 'Muffin', 26: 'Orange', 27: 'Pancake', 28: 'Pear', 29: 'Popcorn',
+    30: 'Pretzel', 31: 'Strawberry', 32: 'Tomato', 33: 'Waffle', 34: 'food-drinks', 35: 'Cheese',
+    36: 'Cocktail', 37: 'Coffee', 38: 'Cooking-spray', 39: 'Crab', 40: 'Croissant', 41: 'Cucumber',
+    42: 'Doughnut', 43: 'Egg', 44: 'Fruit', 45: 'Grapefruit', 46: 'Hamburger', 47: 'Honeycomb',
+    48: 'Juice', 49: 'Lemon', 50: 'Lobster', 51: 'Mango', 52: 'Milk', 53: 'Mushroom',
+    54: 'Oyster', 55: 'Pasta', 56: 'Pastry', 57: 'Peach', 58: 'Pineapple', 59: 'Pizza',
+    60: 'Pomegranate', 61: 'Potato', 62: 'Pumpkin', 63: 'Radish', 64: 'Salad', 65: 'food',
+    66: 'Sandwich', 67: 'Shrimp', 68: 'Squash', 69: 'Squid', 70: 'Submarine-sandwich',
+    71: 'Sushi', 72: 'Taco', 73: 'Tart', 74: 'Tea', 75: 'Vegetable', 76: 'Watermelon', 77: 'Wine',
+    78: 'Winter-melon', 79: 'Zucchini', 80: 'Banh_mi', 81: 'Banh_trang_tron',
+    82: 'Banh_xeo', 83: 'Bun_bo_Hue', 84: 'Bun_dau', 85: 'Com_tam', 86: 'Goi_cuon', 87: 'Pho',
+    88: 'Hu_tieu', 89: 'Xoi'
+}
+
+
 DRUG_CATEGORY = {
     0: 'Alaxan', 1: 'Bactidol', 2: 'Bioflu', 3: 'Biogesic', 4: 'DayZinc', 5: 'Decolgen',
     6: 'Fish Oil', 7: 'Kremil S', 8: 'Medicol', 9: 'Neozep'
 }
-
-edamam = Edamam(nutrition_appid='7eaaf89e', nutrition_appkey='b4b1f0e790a89e57c03c2183d67583e2')
 
 
 def is_kb_consistent() -> bool:
@@ -52,14 +72,38 @@ def is_kb_consistent() -> bool:
     return not inconsistent
 
 
+def print_kb(kb):
+    categories = {}
+    for line in kb:
+        parts = line.split(" is ")
+        category = parts[0].strip()
+        content = parts[1].strip()
+
+        if category not in categories:
+            categories[category] = []
+
+        if content.startswith("-"):
+            content = "not " + content[1:]
+        content = content.replace(" & ", " and ")
+        content = content.replace(" -> ", ": ")
+
+        categories[category].append(content)
+
+    for category, items in categories.items():
+        print(f"{category}:")
+        for item in items:
+            print(f"  - {item}")
+        print()
+
+
 # Function to preprocess the questions by lemmatizing the words
 def preprocess_documents(documents):
-    lemmatizer = WordNetLemmatizer()
+    lemmatiser = WordNetLemmatizer()
     preprocessed = []
     for document in documents:
         tokens = word_tokenize(document)
-        lemmatized = [lemmatizer.lemmatize(word) for word in tokens]
-        preprocessed.append(lemmatized)
+        lemmatised = [lemmatiser.lemmatize(word) for word in tokens]
+        preprocessed.append(lemmatised)
     return preprocessed
 
 
@@ -108,6 +152,34 @@ def predict_image_food(filename, model) -> str:
 
     index = np.argmax(prediction)
     return FOOD_CATEGORY[index][1]
+
+
+def detect_foods(file_path, food_model, class_names, conf_threshold=0.3):  # Add a confidence threshold parameter
+    # Load image
+    image = Image.open(file_path)
+
+    # Prepare image for the model
+    transform = T.Compose([T.Resize((640, 640)), T.ToTensor(), T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+    image = transform(image).unsqueeze(0)
+
+    # Get predictions from the model
+    results = food_model.predict(image)
+
+    # Access the detected objects
+    detections = results[0].tolist()
+
+    # Process the detections
+    predicted_foods = []
+    for detection in detections:
+        x1, y1, x2, y2, conf, class_id = detection[:6]
+        if conf >= conf_threshold:  # Only include detections with confidence above the threshold
+            class_name = class_names[int(class_id)]  # Use the class_names list
+            predicted_foods.append(class_name)
+
+    # Remove duplicate food names
+    unique_foods = list(set(predicted_foods))
+
+    return unique_foods
 
 
 def predict_image_food_multi(filename, model, n=3) -> list:
@@ -180,6 +252,7 @@ root = tk.Tk()
 root.withdraw()
 model_food = load_model("model_food.h5")
 model_drugs = load_model("model_drugs.h5")
+food_model = YOLOv5("yolov5l.pt", device="cpu")
 # exercise_data = pandas.read_csv('megaGymDataset.csv')
 
 #######################################################
@@ -217,8 +290,7 @@ index = gensim.similarities.MatrixSimilarity(tfidf[questions_bow])
 # Welcome user
 #######################################################
 print("Hello there! My name is Nutrino")
-print(
-    "I'm here to assist you with any questions or concerns you have regarding health, wellness, and nutrition. Go ahead and ask me anything!")
+print("I'm here to assist you with any questions or concerns you have regarding health, wellness, and nutrition. Go ahead and ask me anything!")
 print("If you would like me to speak out my replies, please enter SPEAK to start and STOP to stop")
 print("If you would like to ask a question using voice, please enter VOICE.")
 
@@ -311,7 +383,7 @@ while True:
                     engine.runAndWait()
                 kb.pop(-1)
                 continue
-            reply = 'OK, I will remember that' + object + 'is' + subject
+            reply = 'OK, I will remember that ' + object + ' is ' + subject
             print(reply)
             if speakout:
                 engine.say(reply)
@@ -350,11 +422,7 @@ while True:
                 kb.pop(-1)
 
         elif cmd == 33:
-            for fact in kb:
-                print(fact)
-                if speakout:
-                    engine.say(fact)
-                    engine.runAndWait()
+            print_kb()
 
         elif cmd == 34:
             file_path = filedialog.askopenfilename()
@@ -367,8 +435,9 @@ while True:
         elif cmd == 35:
             file_path = filedialog.askopenfilename()
             pred = []
-            pred = predict_image_food_multi(file_path, model_food)
-            print(pred)
+            food_names = list(FOODS_CATEGORY.values())
+            pred = detect_foods(file_path, food_model, food_names)
+            print("Detected foods:", pred)
             if len(pred) == 1:
                 reply = f"This could be a {pred[0]}"
                 print(reply)
@@ -378,8 +447,9 @@ while True:
             elif len(pred) > 1:
                 reply = "These could be "
                 print(reply)
-                engine.say(reply)
-                engine.runAndWait()
+                if speakout:
+                    engine.say(reply)
+                    engine.runAndWait()
                 for food in pred:
                     print(food)
                     if speakout:
