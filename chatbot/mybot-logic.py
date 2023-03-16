@@ -17,6 +17,7 @@ import pandas
 import pyttsx3
 import requests
 import speech_recognition as sr
+import torch
 from PIL import Image
 from keras.models import load_model
 from keras.preprocessing import image
@@ -225,7 +226,7 @@ def predict_image_food(filename, model) -> str:
     return FOOD_CATEGORY[index][1]
 
 
-def detect_foods(file_path, food_model, class_names, conf_threshold=0.3):  # Add a confidence threshold parameter
+def detect_foods(file_path, food_model, class_names, conf_threshold=0.3):
     # Load image
     image = Image.open(file_path)
 
@@ -235,10 +236,11 @@ def detect_foods(file_path, food_model, class_names, conf_threshold=0.3):  # Add
     image = transform(image).unsqueeze(0)
 
     # Get predictions from the model
-    results = food_model.predict(image)
+    with torch.no_grad():
+        results = food_model(image)
 
     # Access the detected objects
-    detections = results[0].tolist()
+    detections = results.pred[0].tolist()
 
     # Process the detections
     predicted_foods = []
@@ -252,6 +254,7 @@ def detect_foods(file_path, food_model, class_names, conf_threshold=0.3):  # Add
     unique_foods = list(set(predicted_foods))
 
     return unique_foods
+
 
 
 def predict_image_food_multi(filename, model, n=3) -> list:
