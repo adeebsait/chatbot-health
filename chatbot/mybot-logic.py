@@ -1,27 +1,28 @@
 ﻿#######################################################
 #  Initialise NLTK Inference
 #######################################################
-import re
+# from gensim.parsing.preprocessing import preprocess_documents
+import json
+import os
+import random
 import time
 import tkinter as tk
 from tkinter import filedialog
+
 import aiml
 import gensim
 import numpy as np
 import pandas
+import pyttsx3
 import requests
-# from gensim.parsing.preprocessing import preprocess_documents
-import os
+import speech_recognition as sr
+from keras.models import load_model
+from keras.preprocessing import image
 from nltk.inference import ResolutionProver
 from nltk.sem import Expression
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing import image
-import speech_recognition as sr
-import pyttsx3
-from typing import List
-import random
+from py_edamam import Edamam
 
 # nltk.download('punkt')
 # nltk.download('stopwords')
@@ -42,6 +43,8 @@ DRUG_CATEGORY = {
     0: 'Alaxan', 1: 'Bactidol', 2: 'Bioflu', 3: 'Biogesic', 4: 'DayZinc', 5: 'Decolgen',
     6: 'Fish Oil', 7: 'Kremil S', 8: 'Medicol', 9: 'Neozep'
 }
+
+edamam = Edamam(nutrition_appid='7eaaf89e', nutrition_appkey='b4b1f0e790a89e57c03c2183d67583e2')
 
 
 def is_kb_consistent() -> bool:
@@ -107,40 +110,18 @@ def predict_image_food(filename, model) -> str:
     return FOOD_CATEGORY[index][1]
 
 
-# def predict_image_food_multi(filename, model) -> list:
-#     img_ = image.load_img(filename, target_size=(299, 299))
-#     img_array = image.img_to_array(img_)
-#     img_processed = np.expand_dims(img_array, axis=0)
-#     img_processed /= 255.
-#
-#     prediction = model.predict(img_processed)
-#
-#     indices = np.argsort(prediction[0])[::-1]
-#     top_indices = indices[:5]
-#
-#     detected_food = []
-#     for index in top_indices:
-#         if prediction[0][index] > 0.5:
-#             detected_food.append(FOOD_CATEGORY[index][1])
-#
-#     return detected_food
+def predict_image_food_multi(filename, model, n=3) -> list:
+    img_ = image.load_img(filename, target_size=(299, 299))
+    img_array = image.img_to_array(img_)
+    img_processed = np.expand_dims(img_array, axis=0)
+    img_processed /= 255.
 
-def predict_image_food_multi(filename, model) -> List[str]:
-    img = image.load_img(filename, target_size=(299, 299))
-    img_array = image.img_to_array(img)
-    img_array /= 255.
-    img_expanded = np.expand_dims(img_array, axis=0)
+    prediction = model.predict(img_processed)
 
-    predictions = model.predict(img_expanded)[0]
+    top_n_indices = np.argsort(prediction[0])[-n:]
+    top_n_predictions = [FOOD_CATEGORY[i][1] for i in top_n_indices]
 
-    # Get the indices of the classes with confidence above the threshold
-    threshold = 0.5
-    class_ids = np.where(predictions > threshold)[0]
-
-    # Get the names of the classes
-    names = [FOOD_CATEGORY[class_id][1] for class_id in list(class_ids)]
-
-    return names
+    return top_n_predictions
 
 
 def predict_image_drug(filename, model) -> str:
@@ -150,6 +131,44 @@ def predict_image_drug(filename, model) -> str:
     p = model.predict(img[np.newaxis, ...])
 
     return DRUG_CATEGORY[np.argmax(p[0], axis=-1)]
+
+
+def get_nutrition_info(nutrient: str, amount: str, food: str) -> str:
+    # Replace 'YOUR_APP_ID' and 'YOUR_APP_KEY' with your actual Edamam API credentials
+    app_id = '7eaaf89e'
+    app_key = 'b973aef0946a4fca327396113d24ae1e'
+    base_url = 'https://api.edamam.com/api/nutrition-data'
+
+    params = {
+        'app_id': app_id,
+        'app_key': app_key,
+        'ingr': f'{amount} {food}',
+    }
+
+    response = requests.get(base_url, params=params)
+    data = json.loads(response.text)
+
+    if data['calories'] == 0 and data['totalWeight'] == 0:
+        return "Invalid input. I couldn't find any information on that food."
+
+    # Convert nutrient to lowercase for easier comparison
+    nutrient = nutrient.lower()
+
+    nutrients_mapping = {
+        'calories': 'calories',
+        'protein': 'PROCNT',
+        'fat': 'FAT',
+        'carbs': 'CHOCDF'
+    }
+
+    if nutrient not in nutrients_mapping:
+        return f"Invalid nutrient input. Please use one of the following: {', '.join(nutrients_mapping.keys())}"
+
+    nutrient_code = nutrients_mapping[nutrient]
+    nutrient_value = data['totalNutrients'][nutrient_code]['quantity']
+    nutrient_unit = data['totalNutrients'][nutrient_code]['unit']
+
+    return f"There are approximately {nutrient_value:.2f}{nutrient_unit} {nutrient} in {amount} of {food}."
 
 
 #######################################################
@@ -198,7 +217,8 @@ index = gensim.similarities.MatrixSimilarity(tfidf[questions_bow])
 # Welcome user
 #######################################################
 print("Hello there! My name is Nutrino")
-print("I'm here to assist you with any questions or concerns you have regarding health, wellness, and nutrition. Go ahead and ask me anything!")
+print(
+    "I'm here to assist you with any questions or concerns you have regarding health, wellness, and nutrition. Go ahead and ask me anything!")
 print("If you would like me to speak out my replies, please enter SPEAK to start and STOP to stop")
 print("If you would like to ask a question using voice, please enter VOICE.")
 
@@ -211,10 +231,10 @@ r = sr.Recognizer()
 engine = pyttsx3.init()
 # voice properties
 voices = engine.getProperty('voices')
-engine.setProperty('voice', voices[1].id) # select a male voice
-engine.setProperty('rate', 160) # adjust speaking rate
-engine.setProperty('volume', 0.9) # adjust volume
-engine.setProperty('pitch', 1.1) # adjust pitch
+engine.setProperty('voice', voices[1].id)  # select a male voice
+engine.setProperty('rate', 160)  # adjust speaking rate
+engine.setProperty('volume', 0.9)  # adjust volume
+engine.setProperty('pitch', 1.1)  # adjust pitch
 
 speakout = False
 while True:
@@ -297,7 +317,7 @@ while True:
                 engine.say(reply)
                 engine.runAndWait()
 
-        elif cmd == 32: # if the input pattern is "check that * is *"
+        elif cmd == 32:  # if the input pattern is "check that * is *"
             object, subject = params[1].split(' is ')
             expr = read_expr(subject + '(' + object + ')')
             answer = ResolutionProver().prove(expr, kb)
@@ -384,6 +404,16 @@ while True:
                 reply = f"Sorry, I couldn't find any exercises for {body_part}. Please try again."
             else:
                 reply = f"Here are 5 exercises for {body_part}: {', '.join(pred)}"
+            print(reply)
+            if speakout:
+                engine.say(reply)
+                engine.runAndWait()
+
+        elif cmd == 38:
+            nutrient, _, rest = params[1].partition(' in ')
+            amount, _, food = rest.partition(' of ')
+            print(nutrient, amount, food)
+            reply = get_nutrition_info(nutrient, amount, food)
             print(reply)
             if speakout:
                 engine.say(reply)
